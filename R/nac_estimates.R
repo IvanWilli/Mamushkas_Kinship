@@ -258,4 +258,3 @@ plot_poissson_app <- bind_rows(
   facet_wrap(~Year)
 plot_poissson_app
 ggsave(plot = plot_poissson_app, filename = "plots/plot_poissson_app.pdf")
-

@@ -217,6 +217,10 @@ set.seed(1234)
 
 save(pop, track, file = "data/microsimulation.rda")
 
+# nacs sin padres por falta de casos en edades [-1, +4]
+recent <- which(pop$edad <= 100)  # everyone alive or dead in the last 100 cohorts
+mean(is.na(pop$id_padre[recent & !is.na(pop$id_madre)]))
+
 # indicadores -------------------------------------------------------------
 
 load("data/microsimulation.rda")
@@ -368,6 +372,19 @@ table_microsim_momushka %>% dput()
 
 # comparación overdispersion ----------------------------------------------
 
+# finding over-dispersion in the microsimulation
+library(dplyr)
+library(aod)
+
+df_counts <- pop %>% 
+  filter(viva, sexo == "F") %>% 
+  mutate(is_mother = paridad > 0) %>%
+  group_by(edad) %>%
+  summarise(y = sum(is_mother), n = n(), .groups = "drop")
+fit <- betabin(cbind(y, n - y) ~ 1, ~ 1, data = df_counts)
+kappa <- unname(coef(fit)["rho"])
+kappa
+
 # beta-binomial
 px <- function(x, n, p, k = Inf) {
   # Binomial case: k = Inf (or very large)
@@ -445,3 +462,255 @@ plot_check_micro_inputs <- bind_rows(rates_check %>%
 plot_check_micro_inputs
 ggsave(plot = plot_check_micro_inputs, 
        filename = "plots/plot_check_micro_inputs.pdf")
+
+# # versión estando vivas ---------------------------------------------------
+# 
+# #### 4’. ESTATUS BASADOS EN DESCENDENCIA VIVA ----
+# 
+# n <- nrow(pop)
+# 
+# ## 4’.1 Hijos vivos (para todos, hombres y mujeres)
+# 
+# child_alive <- pop$viva  # cada individuo está vivo o no
+# 
+# # Rama materna: ¿algún hijo vivo?
+# has_alive_child_m <- tapply(child_alive, pop$id_madre, any, na.rm = TRUE)
+# 
+# # Rama paterna: ¿algún hijo vivo?
+# has_alive_child_p <- tapply(child_alive, pop$id_padre, any, na.rm = TRUE)
+# 
+# # Vector alineado con pop$id
+# has_alive_child <- rep(FALSE, n)
+# 
+# if (!is.null(has_alive_child_m)) {
+#   idx_m <- match(names(has_alive_child_m), pop$id)
+#   has_alive_child[idx_m] <- has_alive_child[idx_m] | has_alive_child_m
+# }
+# 
+# if (!is.null(has_alive_child_p)) {
+#   idx_p <- match(names(has_alive_child_p), pop$id)
+#   has_alive_child[idx_p] <- has_alive_child[idx_p] | has_alive_child_p
+# }
+# 
+# ## Madres con al menos un hijo vivo
+# is_mother_alive_child <- (pop$sexo == "F" & has_alive_child)
+# 
+# 
+# ## 4’.2 Nietos vivos: hijos que tienen al menos un hijo vivo
+# 
+# child_has_alive_child <- has_alive_child   # propiedad de cada individuo: ¿tiene hijos vivos?
+# 
+# # Por la rama materna: ¿algún hijo que tenga hijos vivos?
+# has_alive_grandchild_m <- tapply(child_has_alive_child, pop$id_madre, any, na.rm = TRUE)
+# 
+# # Por la rama paterna
+# has_alive_grandchild_p <- tapply(child_has_alive_child, pop$id_padre, any, na.rm = TRUE)
+# 
+# has_alive_grandchild <- rep(FALSE, n)
+# 
+# if (!is.null(has_alive_grandchild_m)) {
+#   idx_m2 <- match(names(has_alive_grandchild_m), pop$id)
+#   has_alive_grandchild[idx_m2] <-
+#     has_alive_grandchild[idx_m2] | has_alive_grandchild_m
+# }
+# 
+# if (!is.null(has_alive_grandchild_p)) {
+#   idx_p2 <- match(names(has_alive_grandchild_p), pop$id)
+#   has_alive_grandchild[idx_p2] <-
+#     has_alive_grandchild[idx_p2] | has_alive_grandchild_p
+# }
+# 
+# ## Abuelas con al menos un nieto vivo
+# is_grandmother_alive_grandchild <- (pop$sexo == "F" & has_alive_grandchild)
+# 
+# 
+# ## 4’.3 Bisnietos vivos: hijos que tienen al menos un nieto vivo
+# 
+# child_has_alive_grandchild <- has_alive_grandchild
+# 
+# has_alive_greatgrandchild_m <- tapply(child_has_alive_grandchild, pop$id_madre, any, na.rm = TRUE)
+# has_alive_greatgrandchild_p <- tapply(child_has_alive_grandchild, pop$id_padre, any, na.rm = TRUE)
+# 
+# has_alive_greatgrandchild <- rep(FALSE, n)
+# 
+# if (!is.null(has_alive_greatgrandchild_m)) {
+#   idx_m3 <- match(names(has_alive_greatgrandchild_m), pop$id)
+#   has_alive_greatgrandchild[idx_m3] <-
+#     has_alive_greatgrandchild[idx_m3] | has_alive_greatgrandchild_m
+# }
+# 
+# if (!is.null(has_alive_greatgrandchild_p)) {
+#   idx_p3 <- match(names(has_alive_greatgrandchild_p), pop$id)
+#   has_alive_greatgrandchild[idx_p3] <-
+#     has_alive_greatgrandchild[idx_p3] | has_alive_greatgrandchild_p
+# }
+# 
+# ## Bisabuelas con al menos un bisnieto vivo
+# is_greatgrandmother_alive_ggchild <- (pop$sexo == "F" & has_alive_greatgrandchild)
+# 
+# #### 5’. PROPORCIONES POR EDAD (solo con descendencia viva) ----
+# 
+# mujeres_vivas <- (pop$viva & pop$sexo == "F")
+# ages_final    <- 0:max_age
+# 
+# res_alive <- data.frame(
+#   edad                        = ages_final,
+#   n_mujeres_vivas             = sapply(ages_final, function(a)
+#     sum(mujeres_vivas & pop$edad == a)),
+#   prop_madres_con_hijo_vivo   = NA_real_,
+#   prop_abuelas_con_nieto_vivo = NA_real_,
+#   prop_bisabuelas_con_bn_vivo = NA_real_
+# )
+# 
+# for (i in seq_along(ages_final)) {
+#   a   <- ages_final[i]
+#   idx <- which(mujeres_vivas & pop$edad == a)
+#   if (length(idx) > 0) {
+#     res_alive$prop_madres_con_hijo_vivo[i]   <- mean(is_mother_alive_child[idx])
+#     res_alive$prop_abuelas_con_nieto_vivo[i] <- mean(is_grandmother_alive_grandchild[idx])
+#     res_alive$prop_bisabuelas_con_bn_vivo[i] <- mean(is_greatgrandmother_alive_ggchild[idx])
+#   }
+# }
+# 
+# head(res_alive, 20)
+# 
+# library(dplyr)
+# library(tidyr)
+# library(ggplot2)
+# 
+# ## 1) Unimos res (ever) y res_alive (living) en una sola tabla ancha
+# 
+# both <- res %>%
+#   select(
+#     edad,
+#     mothers_ever      = prop_madres,
+#     grandmothers_ever = prop_abuelas_tot,
+#     ggms_ever         = prop_bisabuelas_tot
+#   ) %>%
+#   left_join(
+#     res_alive %>%
+#       select(
+#         edad,
+#         mothers_alive      = prop_madres_con_hijo_vivo,
+#         grandmothers_alive = prop_abuelas_con_nieto_vivo,
+#         ggms_alive         = prop_bisabuelas_con_bn_vivo
+#       ),
+#     by = "edad"
+#   )
+# 
+# ## 2) Construimos explícitamente el long: 3 tipos de kin × 2 status
+# 
+# combined <- bind_rows(
+#   # Mothers
+#   both %>%
+#     transmute(
+#       edad,
+#       kin     = "Mothers",
+#       status  = "Ever",
+#       proportion = mothers_ever
+#     ),
+#   both %>%
+#     transmute(
+#       edad,
+#       kin     = "Mothers",
+#       status  = "With living descendant",
+#       proportion = mothers_alive
+#     ),
+#   # Grandmothers
+#   both %>%
+#     transmute(
+#       edad,
+#       kin     = "Grandmothers",
+#       status  = "Ever",
+#       proportion = grandmothers_ever
+#     ),
+#   both %>%
+#     transmute(
+#       edad,
+#       kin     = "Grandmothers",
+#       status  = "With living descendant",
+#       proportion = grandmothers_alive
+#     ),
+#   # Great-grandmothers
+#   both %>%
+#     transmute(
+#       edad,
+#       kin     = "Great-grandmothers",
+#       status  = "Ever",
+#       proportion = ggms_ever
+#     ),
+#   both %>%
+#     transmute(
+#       edad,
+#       kin     = "Great-grandmothers",
+#       status  = "With living descendant",
+#       proportion = ggms_alive
+#     )
+# )
+# 
+# ## (Opcional) chequeo rápido de duplicados
+# combined %>%
+#   count(edad, kin, status) %>%
+#   filter(n > 1)
+# # debería devolver 0 filas
+# 
+# ## 3) Gráfico superpuesto
+# 
+# ggplot(combined,
+#        aes(x = edad, y = proportion,
+#            color = kin, linetype = status)) +
+#   geom_line(size = 1) +
+#   scale_y_continuous(limits = c(0, 1),
+#                      name   = "Proportion among women alive") +
+#   scale_x_continuous(name = "Age") +
+#   scale_color_discrete(name = "") +
+#   scale_linetype_discrete(name = "") +
+#   labs(
+#     title    = "Age-specific proportions of mothers, grandmothers and great-grandmothers",
+#     subtitle = "Ever vs with ≥1 living child, grandchild or great-grandchild"
+#   ) +
+#   theme_minimal(base_size = 14) +
+#   theme(
+#     legend.position = "top",
+#     legend.box      = "vertical"
+#   )
+# 
+# ######### dif
+# ombined %>% filter(kin == "Mothers", edad > 60) %>% 
+#   pivot_wider(names_from = status, values_from = proportion) %>% 
+#   mutate(dif = Ever - `With living descendant`) %>% as.data.frame()
+# 
+# 
+# 
+# head(res, 20)
+# res$prop_madres %>% plot()
+# mean(res$prop_madres[60:88])
+# res$prop_abuelas %>% plot()
+# mean(res$prop_abuelas[80:88])
+# res$prop_bisabuelas %>% plot()
+# mean(res$prop_bisabuelas[90:99])
+# 
+# res_plot <- res %>%
+#   select(edad, prop_madres, prop_abuelas_tot, prop_bisabuelas_tot) %>%
+#   pivot_longer(cols = -edad,
+#                names_to = "tipo",
+#                values_to = "proporcion")
+# 
+# # Etiquetas más amigables
+# res_plot$tipo <- factor(res_plot$tipo,
+#                         levels = c("prop_madres",
+#                                    "prop_abuelas_tot",
+#                                    "prop_bisabuelas_tot"),
+#                         labels = c("Madres",
+#                                    "Abuelas (totales)",
+#                                    "Bisabuelas (totales)"))
+# 
+# # Gráfico
+# (ggplot(res_plot, aes(x = edad, y = proporcion, color = tipo)) +
+#     geom_line(size = 1) +
+#     scale_y_continuous(limits = c(0,1), name = "Proporción") +
+#     scale_x_continuous(name = "Edad") +
+#     labs(title = "Proporción de madres, abuelas y bisabuelas por edad",
+#          color = "") +
+#     theme_minimal(base_size = 14) +
+#     theme(legend.position = "top")) %>% plotly::ggplotly()
