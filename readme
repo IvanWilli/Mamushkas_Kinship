@@ -1,2 +1,5 @@
-Following the script "nac_estimates.R" all national results can be reproduced. 
-With script "microsim.R", microsimulation can be done, comparing with momushka results.
+Scripts and data to reproduce 'Vertical kinship distribution at the population level: a Mamushka approximation':
+- "nac_estimates.R" all national results can be reproduced.
+- "prov_estimates.R" generates results for provinces (some data is downloadable online)
+- "microsim.R" makes the microsimulation test, comparing with momushka results.
+- "run_sweden_1970_2017_with_death.R" compares time-varying scenario against Sweden in 2017. 
